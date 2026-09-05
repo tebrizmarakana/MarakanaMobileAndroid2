@@ -1,0 +1,5 @@
+MARAKANA MOBILE v35 — BİLDİRİŞ SMART ACTION DÜZƏLİŞİ
+
+- Mətbəx sifarişi bildirişində sistemin avtomatik yaratdığı contextual action-lar söndürülüb.
+- Xüsusilə Samsung cihazlarında görünən “Haritayı aç” tipli lazımsız düymənin qarşısı alınır.
+- Həm MainActivity, həm KitchenBackgroundService bildirişləri qorunub.

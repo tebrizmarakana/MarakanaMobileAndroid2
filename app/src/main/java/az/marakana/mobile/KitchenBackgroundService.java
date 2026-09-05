@@ -48,7 +48,7 @@ public class KitchenBackgroundService extends Service {
     private static final String KEY_KITCHEN_NOTIFICATION_SOUND = "kitchen_notification_sound";
     private static final String KITCHEN_NOTIFICATION_SILENT = "__silent__";
     private static final String KITCHEN_NOTIFICATION_CHANNEL_PREFIX = "marakana_kitchen_orders_";
-    private static final String SERVICE_CHANNEL_ID = "marakana_kitchen_background_v34";
+    private static final String SERVICE_CHANNEL_ID = "marakana_kitchen_background_v35";
     private static final String KEYSTORE_ALIAS = "marakana_mobile_login_key";
     private static final int SERVICE_NOTIFICATION_ID = 32001;
     private static final long POLL_DELAY_MS = 1000L;
@@ -228,6 +228,12 @@ public class KitchenBackgroundService extends Service {
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setWhen(System.currentTimeMillis())
                 .setShowWhen(true);
+
+        // v35: Samsung/Android-un bildiriş mətnindən "Haritayı aç" kimi
+        // lazımsız smart/contextual action yaratmasına icazə vermə.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setAllowSystemGeneratedContextualActions(false);
+        }
 
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager != null) {

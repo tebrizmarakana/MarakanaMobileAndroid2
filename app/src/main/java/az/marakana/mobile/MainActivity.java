@@ -2313,6 +2313,12 @@ public class MainActivity extends Activity {
                 .setWhen(System.currentTimeMillis())
                 .setShowWhen(true);
 
+        // v35: Samsung/Android-un bildiriş mətnindən "Haritayı aç" kimi
+        // lazımsız smart/contextual action yaratmasına icazə vermə.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setAllowSystemGeneratedContextualActions(false);
+        }
+
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager != null) {
             int ticketId = ticket.optInt("id", 0);
