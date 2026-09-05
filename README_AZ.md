@@ -1,22 +1,20 @@
-# Marakana Mobile Native v35
+# Marakana Mobile Native v36
 
-## v35 — Bildirişdə lazımsız smart action ləğvi
+## v36 — İcarə Paneli
 
-Mətbəx sifarişi bildirişi açıldıqda Samsung/Android-in avtomatik yaratdığı
-`Haritayı aç` kimi sistem contextual/smart action düymələri bloklanır.
+Admin mobil menyusuna **İcarə Paneli** əlavə edildi. Panelin aşağı hissəsində Borc Dəftəri stilində 3 tab var:
 
-Dəyişiklik həm tətbiq açıq olanda yaradılan mətbəx bildirişinə, həm də
-`KitchenBackgroundService` fon bildirişinə tətbiq olunub.
+- **Aktiv icarələr** — aktiv/gecikmiş icarələri göstərir; müştəri, telefon, konsol, pult sayı, başlama/təhvil vaxtı, qalan vaxt, ödəniş, qalıq borc və depozit görünür. Kartın üzərinə toxunanda ətraflı məlumat açılır.
+- **Müştərilər** — müştəri siyahısı, status, telefon, qeydiyyat və tamamlanan icarə sayı; axtarış və ətraflı baxış işləyir.
+- **Tarixçə** — qaytarılmış/ləğv edilmiş icarələr; tarixlər, konsol, məbləğlər və status görünür.
 
-Əvvəlki funksiyalar qorunur:
-- fon mətbəx bildirişləri;
-- seçilən bildiriş səsi;
-- terminal/kabinet adı mavi;
-- məhsul adları qalın və 15sp;
-- bildirişə toxunanda Mətbəx ekranının açılması.
+Tablar düymə ilə və sola/sağa swipe ilə dəyişir.
+
+### Vacib
+Bu v36 İcarə Paneli üçün PC proqramında **v1265 Mobile Rental API** tələb olunur. Köhnə PC versiyasında `/api/mobile/rental/list` endpoint-i olmadığı üçün İcarə Paneli məlumat yükləyə bilməz.
 
 Versiya:
-- `versionCode 35`
-- `versionName 3.4.12-native-v35`
-- Release artifact: `MarakanaMobile-v35-permanent-update-apk`
-- Release APK: `MarakanaMobile-v35-release.apk`
+- `versionCode 36`
+- `versionName 3.4.13-native-v36`
+- Release artifact: `MarakanaMobile-v36-permanent-update-apk`
+- Release APK: `MarakanaMobile-v36-release.apk`

@@ -553,6 +553,10 @@ public class MainActivity extends Activity {
                 holder[0].dismiss();
                 switchMobileRole("admin", true, () -> showDebt("İşçi"));
             });
+            addDrawerItem(panel, "İcarə Paneli", () -> {
+                holder[0].dismiss();
+                switchMobileRole("admin", false, () -> showRental("active"));
+            });
         }
 
         View flex = new View(this);
@@ -1633,6 +1637,375 @@ public class MainActivity extends Activity {
         });
     }
 
+    private static final String[] RENTAL_TABS = {"active", "customers", "history"};
+
+    private void showRental(String section) {
+        String activeSection = normalizeRentalSection(section);
+        currentBackAction = null;
+        clear();
+
+        LinearLayout shell = new LinearLayout(this);
+        shell.setOrientation(LinearLayout.VERTICAL);
+        shell.setPadding(dp(8), dp(10), dp(8), 0);
+        content.addView(shell, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        shell.addView(buildMainHeader("İcarə Paneli", false, null));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        shell.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        LinearLayout body = scrollBody(scroll);
+        body.setPadding(0, dp(4), 0, dp(92));
+
+        LinearLayout summaryHost = new LinearLayout(this);
+        summaryHost.setOrientation(LinearLayout.VERTICAL);
+        body.addView(summaryHost);
+
+        EditText search = input(rentalSearchHint(activeSection));
+        body.addView(search);
+        spacer(body, 10);
+
+        LinearLayout recordsHost = new LinearLayout(this);
+        recordsHost.setOrientation(LinearLayout.VERTICAL);
+        body.addView(recordsHost);
+
+        installRentalGestures(scroll, activeSection);
+        installRentalGestures(body, activeSection);
+
+        LinearLayout footer = buildRentalFooter(activeSection);
+        shell.addView(footer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(88)));
+
+        loadJson("/api/mobile/rental/list?section=" + urlEncode(activeSection), result -> {
+            JSONArray items = result.optJSONArray("items");
+            if (items == null) items = new JSONArray();
+            JSONObject counts = result.optJSONObject("counts");
+            String warning = result.optString("warning", "").trim();
+            String branch = result.optString("branch_id", "").trim();
+            renderRentalSummary(summaryHost, activeSection, counts, branch, warning);
+            final JSONArray finalItems = items;
+            Runnable render = () -> renderRentalRecords(recordsHost, activeSection, finalItems, search.getText().toString());
+            search.addTextChangedListener(new SimpleTextWatcher(render));
+            render.run();
+        });
+    }
+
+    private String normalizeRentalSection(String section) {
+        String value = section == null ? "active" : section.trim().toLowerCase(Locale.ROOT);
+        for (String candidate : RENTAL_TABS) if (candidate.equals(value)) return value;
+        return "active";
+    }
+
+    private String rentalSearchHint(String section) {
+        if ("customers".equals(section)) return "Müştəri adı, telefon və ya status ilə axtar";
+        if ("history".equals(section)) return "Müştəri, konsol və ya status ilə axtar";
+        return "Müştəri, telefon və ya konsol ilə axtar";
+    }
+
+    private void renderRentalSummary(LinearLayout host, String section, JSONObject counts, String branch, String warning) {
+        host.removeAllViews();
+        LinearLayout card = card();
+        String title;
+        String value;
+        if ("customers".equals(section)) {
+            int total = counts == null ? 0 : counts.optInt("total", 0);
+            int approved = counts == null ? 0 : counts.optInt("approved", 0);
+            int pending = counts == null ? 0 : counts.optInt("pending", 0);
+            title = "Müştərilər";
+            value = "Cəmi: " + total + "  •  Təsdiqli: " + approved + "  •  Gözləyən: " + pending;
+        } else if ("history".equals(section)) {
+            int total = counts == null ? 0 : counts.optInt("total", 0);
+            int returned = counts == null ? 0 : counts.optInt("returned", 0);
+            int cancelled = counts == null ? 0 : counts.optInt("cancelled", 0);
+            title = "İcarə tarixçəsi";
+            value = "Cəmi: " + total + "  •  Qaytarılıb: " + returned + "  •  Ləğv: " + cancelled;
+        } else {
+            int total = counts == null ? 0 : counts.optInt("total", 0);
+            int overdue = counts == null ? 0 : counts.optInt("overdue", 0);
+            title = "Aktiv icarələr";
+            value = "Cəmi: " + total + (overdue > 0 ? "  •  Gecikib: " + overdue : "");
+        }
+        card.addView(text(title, 14, MUTED, true));
+        card.addView(text(value, 18, TEXT, true), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)));
+        if (!branch.isEmpty()) card.addView(text("Filial: " + branch, 12, MUTED, false));
+        host.addView(card);
+        if (!warning.isEmpty()) {
+            TextView warn = text(warning, 12, ORANGE, true);
+            warn.setPadding(dp(10), dp(9), dp(10), dp(9));
+            warn.setBackground(bg(Color.rgb(255, 248, 232), 12, Color.rgb(232, 202, 135)));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, 0, 0, dp(10));
+            host.addView(warn, lp);
+        }
+    }
+
+    private void renderRentalRecords(LinearLayout host, String section, JSONArray items, String query) {
+        host.removeAllViews();
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        int visible = 0;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject row = items.optJSONObject(i);
+            if (row == null) continue;
+            String haystack;
+            if ("customers".equals(section)) {
+                haystack = row.optString("full_name", "") + " " + row.optString("phone", "") + " " +
+                        row.optString("relative_phone", "") + " " + rentalCustomerStatus(row);
+            } else {
+                haystack = row.optString("customer_name", "") + " " + row.optString("customer_phone", "") + " " +
+                        row.optString("console_name", "") + " " + rentalStatusLabel(row.optString("status", ""));
+            }
+            if (!q.isEmpty() && !haystack.toLowerCase(Locale.ROOT).contains(q)) continue;
+            visible++;
+            if ("customers".equals(section)) host.addView(buildRentalCustomerCard(row));
+            else if ("history".equals(section)) host.addView(buildRentalHistoryCard(row));
+            else host.addView(buildRentalActiveCard(row));
+        }
+        if (visible == 0) host.addView(empty(q.isEmpty() ? "Məlumat yoxdur." : "Axtarışa uyğun nəticə tapılmadı."));
+    }
+
+    private LinearLayout buildRentalActiveCard(JSONObject row) {
+        LinearLayout c = card();
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        String name = row.optString("customer_name", "Müştəri").trim();
+        TextView n = text(name.isEmpty() ? "Müştəri" : name, 17, TEXT, true);
+        top.addView(n, new LinearLayout.LayoutParams(0, dp(34), 1f));
+        String status = row.optString("status", "active");
+        int statusColor = "overdue".equals(status) ? Color.rgb(192, 54, 54) : GREEN;
+        TextView chip = text(rentalStatusLabel(status), 12, statusColor, true);
+        chip.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        top.addView(chip, new LinearLayout.LayoutParams(dp(92), dp(34)));
+        c.addView(top);
+
+        String phone = row.optString("customer_phone", "").trim();
+        if (!phone.isEmpty()) c.addView(text("📱 " + phone, 13, MUTED, true));
+        String console = row.optString("console_name", "").trim();
+        int pads = Math.max(1, row.optInt("controller_count", 1));
+        c.addView(text("🎮 " + (console.isEmpty() ? "Konsol qeyd edilməyib" : console) + "  •  " + pads + " pult", 14, TEXT, true));
+        c.addView(text("Başlama: " + rentalDateTime(row.optString("start_at", "")), 12, MUTED, false));
+        c.addView(text("Təhvil: " + rentalDateTime(row.optString("due_at", "")) + "  •  " + rentalRemaining(row.optString("due_at", "")), 12, "overdue".equals(status) ? Color.rgb(192,54,54) : MUTED, true));
+        c.addView(text("İcarə: " + money(row.optDouble("rental_price", 0)) + "  •  Ödənib: " + money(row.optDouble("paid_amount", 0)), 13, TEXT, true));
+        double outstanding = row.optDouble("outstanding_amount", 0);
+        double deposit = row.optDouble("deposit_amount", 0);
+        c.addView(text("Qalıq borc: " + money(outstanding) + "  •  Depozit: " + money(deposit), 13, outstanding > 0.001 ? ORANGE : MUTED, true));
+        c.setClickable(true);
+        c.setOnClickListener(v -> showRentalActiveDetails(row));
+        return c;
+    }
+
+    private LinearLayout buildRentalCustomerCard(JSONObject row) {
+        LinearLayout c = card();
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        String name = row.optString("full_name", "Müştəri").trim();
+        boolean verified = row.optInt("is_verified", 0) == 1 || row.optInt("completed_rentals", 0) >= 10;
+        TextView n = text((verified ? "✓ " : "") + (name.isEmpty() ? "Müştəri" : name), 17, TEXT, true);
+        top.addView(n, new LinearLayout.LayoutParams(0, dp(34), 1f));
+        String status = rentalCustomerStatus(row);
+        int statusColor = status.equals("Təsdiqləndi") ? GREEN : (status.equals("Gözləyir") ? ORANGE : MUTED);
+        TextView chip = text(status, 12, statusColor, true);
+        chip.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        top.addView(chip, new LinearLayout.LayoutParams(dp(105), dp(34)));
+        c.addView(top);
+        String phone = row.optString("phone", "").trim();
+        c.addView(text("📱 " + (phone.isEmpty() ? "Telefon yoxdur" : phone), 14, TEXT, true));
+        String registered = rentalDateTime(row.optString("registered_at", ""));
+        if (!registered.isEmpty()) c.addView(text("Qeydiyyat: " + registered, 12, MUTED, false));
+        int completed = row.optInt("completed_rentals", 0);
+        c.addView(text("Tamamlanan icarə: " + completed, 12, MUTED, true));
+        c.setClickable(true);
+        c.setOnClickListener(v -> showRentalCustomerDetails(row));
+        return c;
+    }
+
+    private LinearLayout buildRentalHistoryCard(JSONObject row) {
+        LinearLayout c = card();
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        String name = row.optString("customer_name", "Müştəri").trim();
+        top.addView(text(name.isEmpty() ? "Müştəri" : name, 17, TEXT, true), new LinearLayout.LayoutParams(0, dp(34), 1f));
+        String status = rentalStatusLabel(row.optString("status", ""));
+        TextView chip = text(status, 12, status.startsWith("Qaytar") ? GREEN : ORANGE, true);
+        chip.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        top.addView(chip, new LinearLayout.LayoutParams(dp(105), dp(34)));
+        c.addView(top);
+        String console = row.optString("console_name", "").trim();
+        if (!console.isEmpty()) c.addView(text("🎮 " + console, 13, TEXT, true));
+        c.addView(text("Başlama: " + rentalDateTime(row.optString("start_at", "")), 12, MUTED, false));
+        c.addView(text("Qaytarılma: " + rentalDateTime(row.optString("returned_at", "")), 12, MUTED, false));
+        c.addView(text("İcarə: " + money(row.optDouble("rental_price", 0)) + "  •  Ödənib: " + money(row.optDouble("paid_amount", 0)), 13, TEXT, true));
+        c.setClickable(true);
+        c.setOnClickListener(v -> showRentalHistoryDetails(row));
+        return c;
+    }
+
+    private void showRentalActiveDetails(JSONObject row) {
+        StringBuilder msg = new StringBuilder();
+        msg.append("Telefon: ").append(row.optString("customer_phone", "-")).append("\n");
+        msg.append("Konsol: ").append(row.optString("console_name", "-")).append("\n");
+        msg.append("Pult: ").append(Math.max(1, row.optInt("controller_count", 1))).append("\n");
+        msg.append("Gün: ").append(Math.max(1, row.optInt("days", 1))).append("\n");
+        msg.append("Başlama: ").append(rentalDateTime(row.optString("start_at", ""))).append("\n");
+        msg.append("Təhvil: ").append(rentalDateTime(row.optString("due_at", ""))).append("\n");
+        msg.append("Qalan vaxt: ").append(rentalRemaining(row.optString("due_at", ""))).append("\n");
+        msg.append("Ödəniş: ").append(rentalPaymentLabel(row.optString("payment_type", ""))).append("\n");
+        msg.append("İcarə: ").append(money(row.optDouble("rental_price", 0))).append("\n");
+        msg.append("Ödənib: ").append(money(row.optDouble("paid_amount", 0))).append("\n");
+        msg.append("Qalıq borc: ").append(money(row.optDouble("outstanding_amount", 0))).append("\n");
+        msg.append("Depozit: ").append(money(row.optDouble("deposit_amount", 0)));
+        new AlertDialog.Builder(this).setTitle(row.optString("customer_name", "Aktiv icarə")).setMessage(msg.toString()).setPositiveButton("Bağla", null).show();
+    }
+
+    private void showRentalCustomerDetails(JSONObject row) {
+        StringBuilder msg = new StringBuilder();
+        msg.append("Telefon: ").append(row.optString("phone", "-")).append("\n");
+        String relative = row.optString("relative_phone", "").trim();
+        if (!relative.isEmpty()) msg.append("Yaxın telefon: ").append(relative).append("\n");
+        String email = row.optString("email", "").trim();
+        if (!email.isEmpty()) msg.append("E-mail: ").append(email).append("\n");
+        msg.append("Status: ").append(rentalCustomerStatus(row)).append("\n");
+        msg.append("Tamamlanan icarə: ").append(row.optInt("completed_rentals", 0)).append("\n");
+        msg.append("Qeydiyyat: ").append(rentalDateTime(row.optString("registered_at", "")));
+        new AlertDialog.Builder(this).setTitle(row.optString("full_name", "Müştəri")).setMessage(msg.toString()).setPositiveButton("Bağla", null).show();
+    }
+
+    private void showRentalHistoryDetails(JSONObject row) {
+        StringBuilder msg = new StringBuilder();
+        msg.append("Status: ").append(rentalStatusLabel(row.optString("status", ""))).append("\n");
+        String console = row.optString("console_name", "").trim();
+        if (!console.isEmpty()) msg.append("Konsol: ").append(console).append("\n");
+        msg.append("Başlama: ").append(rentalDateTime(row.optString("start_at", ""))).append("\n");
+        msg.append("Təhvil vaxtı: ").append(rentalDateTime(row.optString("due_at", ""))).append("\n");
+        msg.append("Qaytarılma: ").append(rentalDateTime(row.optString("returned_at", ""))).append("\n");
+        msg.append("İcarə: ").append(money(row.optDouble("rental_price", 0))).append("\n");
+        msg.append("Ödənib: ").append(money(row.optDouble("paid_amount", 0))).append("\n");
+        msg.append("Qalıq: ").append(money(row.optDouble("outstanding_amount", 0)));
+        new AlertDialog.Builder(this).setTitle(row.optString("customer_name", "İcarə tarixçəsi")).setMessage(msg.toString()).setPositiveButton("Bağla", null).show();
+    }
+
+    private String rentalCustomerStatus(JSONObject row) {
+        if (row.optInt("is_active", 0) != 1) return "Deaktiv";
+        String approval = row.optString("approval_status", "approved").trim().toLowerCase(Locale.ROOT);
+        if ("pending".equals(approval)) return "Gözləyir";
+        if ("approved".equals(approval)) return "Təsdiqləndi";
+        return approval.isEmpty() ? "Təsdiqləndi" : approval;
+    }
+
+    private String rentalStatusLabel(String status) {
+        String s = status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
+        if ("active".equals(s)) return "Aktiv";
+        if ("overdue".equals(s)) return "Gecikib";
+        if ("returned".equals(s)) return "Qaytarılıb";
+        if ("cancelled".equals(s) || "canceled".equals(s)) return "Ləğv edilib";
+        if ("archived".equals(s)) return "Arxiv";
+        return status == null || status.trim().isEmpty() ? "-" : status;
+    }
+
+    private String rentalPaymentLabel(String payment) {
+        String p = payment == null ? "" : payment.trim().toLowerCase(Locale.ROOT);
+        if ("cash".equals(p) || "nağd".equals(p) || "nagd".equals(p)) return "Nağd";
+        if ("card".equals(p) || "kart".equals(p)) return "Kart";
+        if ("credit".equals(p) || "nisyə".equals(p) || "nisye".equals(p)) return "Nisyə";
+        return payment == null || payment.trim().isEmpty() ? "-" : payment;
+    }
+
+    private java.time.LocalDateTime rentalParseDateTime(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return null;
+        String value = raw.trim().replace(' ', 'T');
+        try { return java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDateTime(); }
+        catch (Exception ignored) {}
+        try { return java.time.LocalDateTime.parse(value); }
+        catch (Exception ignored) {}
+        try { return java.time.LocalDate.parse(value).atStartOfDay(); }
+        catch (Exception ignored) {}
+        return null;
+    }
+
+    private String rentalDateTime(String raw) {
+        java.time.LocalDateTime dt = rentalParseDateTime(raw);
+        if (dt == null) return raw == null ? "" : raw.trim();
+        return dt.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"));
+    }
+
+    private String rentalRemaining(String raw) {
+        java.time.LocalDateTime due = rentalParseDateTime(raw);
+        if (due == null) return "-";
+        long seconds = java.time.Duration.between(java.time.LocalDateTime.now(), due).getSeconds();
+        boolean overdue = seconds < 0;
+        long value = Math.abs(seconds);
+        long days = value / 86400;
+        long hours = (value % 86400) / 3600;
+        long minutes = (value % 3600) / 60;
+        String text;
+        if (days > 0) text = days + " gün " + hours + " saat";
+        else if (hours > 0) text = hours + " saat " + minutes + " dəq";
+        else text = Math.max(0, minutes) + " dəq";
+        return overdue ? "Gecikib: " + text : "Qalıb: " + text;
+    }
+
+    private void installRentalGestures(View target, String section) {
+        final int swipeThreshold = dp(48);
+        GestureDetector detector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onDown(MotionEvent e) { return true; }
+            @Override public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+                if (e1 == null || e2 == null) return false;
+                float dx = e2.getX() - e1.getX();
+                float dy = e2.getY() - e1.getY();
+                if (Math.abs(dx) < swipeThreshold || Math.abs(dx) <= Math.abs(dy)) return false;
+                int index = 0;
+                for (int i = 0; i < RENTAL_TABS.length; i++) if (RENTAL_TABS[i].equals(section)) { index = i; break; }
+                if (dx > 0) {
+                    if (index > 0) showRental(RENTAL_TABS[index - 1]);
+                    else showNavigationMenu();
+                } else if (index < RENTAL_TABS.length - 1) {
+                    showRental(RENTAL_TABS[index + 1]);
+                }
+                return true;
+            }
+        });
+        target.setOnTouchListener((v, event) -> { detector.onTouchEvent(event); return false; });
+    }
+
+    private LinearLayout buildRentalFooter(String activeSection) {
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER);
+        footer.setPadding(dp(6), dp(8), dp(6), dp(8));
+        footer.setBackground(bg(Color.WHITE, 22, BORDER));
+        footer.setElevation(dp(12));
+        String[] icons = {"🎮", "👥", "🕘"};
+        String[] labels = {"Aktiv icarələr", "Müştərilər", "Tarixçə"};
+        for (int i = 0; i < RENTAL_TABS.length; i++) {
+            String section = RENTAL_TABS[i];
+            LinearLayout tab = buildRentalFooterTab(icons[i], labels[i], section.equals(activeSection));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+            if (i > 0) lp.setMargins(dp(6), 0, 0, 0);
+            tab.setLayoutParams(lp);
+            tab.setOnClickListener(v -> showRental(section));
+            footer.addView(tab);
+        }
+        return footer;
+    }
+
+    private LinearLayout buildRentalFooterTab(String iconText, String label, boolean active) {
+        LinearLayout tab = new LinearLayout(this);
+        tab.setOrientation(LinearLayout.VERTICAL);
+        tab.setGravity(Gravity.CENTER);
+        tab.setPadding(dp(6), dp(4), dp(6), dp(4));
+        tab.setBackground(bg(active ? Color.rgb(238, 241, 245) : Color.WHITE, 18, active ? Color.rgb(210, 218, 226) : Color.TRANSPARENT));
+        TextView icon = text(iconText, 18, active ? TEXT : MUTED, false);
+        icon.setGravity(Gravity.CENTER);
+        tab.addView(icon, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(24)));
+        TextView title = text(label, 12, active ? TEXT : MUTED, true);
+        title.setGravity(Gravity.CENTER);
+        title.setMaxLines(2);
+        tab.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
+        return tab;
+    }
+
     private void showDebt(String category) {
         currentBackAction = null;
         clear();
@@ -2313,7 +2686,7 @@ public class MainActivity extends Activity {
                 .setWhen(System.currentTimeMillis())
                 .setShowWhen(true);
 
-        // v35: Samsung/Android-un bildiriş mətnindən "Haritayı aç" kimi
+        // v36: Samsung/Android-un bildiriş mətnindən "Haritayı aç" kimi
         // lazımsız smart/contextual action yaratmasına icazə vermə.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setAllowSystemGeneratedContextualActions(false);

@@ -1,7 +1,7 @@
-Marakana Mobile v35 GitHub upload
+Marakana Mobile v36 GitHub upload
 
 1) Daimi signing ucun evvelden yaratdigin 4 GitHub Secret oldugu kimi qalir.
 2) Bu TAM layihenin icindekileri repo kokune yukle ve kohne fayllarin ustune yaz.
 3) Commit changes et.
-4) Actions -> Build Marakana Mobile Native v35 RELEASE APK -> Run workflow.
-5) Artifact: MarakanaMobile-v35-permanent-update-apk
+4) Actions -> Build Marakana Mobile Native v36 RELEASE APK -> Run workflow.
+5) Artifact: MarakanaMobile-v36-permanent-update-apk
